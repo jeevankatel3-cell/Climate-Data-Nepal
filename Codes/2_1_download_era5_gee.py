@@ -1,30 +1,43 @@
+##1.1 Importing and Initializing
 import ee
-ee.Initialize(project="ee-joshisur231", opt_url='https://earthengine-highvolume.googleapis.com')
 import geemap
-import multiprocessing
+
+cloud_project = 'ee-jeevankatel3'
+
+try:
+    ee.Initialize(project=cloud_project)
+except:
+    ee.Authenticate()
+    ee.Initialize(project=cloud_project)
+from multiprocessing.dummy import Pool as ThreadPool
+import threading
 import logging
 import time
 from datetime import datetime
 import os
+import traceback
 from colorama import Fore, Back
 from retry import retry
 import pandas as pd
 
 start_time = time.time()
-roi = ee.FeatureCollection("projects/ee-joshisur231/assets/nepal_municipality").filter(ee.Filter.eq("GaPa_NaPa", "Bhimdatta")).geometry()
+roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 
-output_path = r'outputs\tables'
+#select output path
+output_path = r'Data/Datasets/ERA5_land_prec'
+
+os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('1950-01-01', '1951-01-01')
+era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('1990-01-01', '2020-01-01')
 
 @retry(tries=10, delay=1, backoff=2)
 def process_date(date_chunk):
     for myDate in date_chunk:
         try:
             nepal_date = str(myDate.format('YYYYMMdd', timeZone='Asia/Thimphu').getInfo())
-            out_fc = os.path.join(output_path, nepal_date+'.csv')
+            out_fc = os.path.join(output_path, f"ERA5L_prec_{nepal_date}"+'.tif')
 
             if os.path.exists(out_fc):
                 print(Fore.YELLOW + f"..........Skipping {nepal_date}, file already exists..........")
@@ -32,34 +45,49 @@ def process_date(date_chunk):
             
             print(Back.BLUE + f"..........Started for {nepal_date}..........")
             filtered_date_dataset = era5_dataset.filterDate(myDate, myDate.advance(1, 'day'))
-            tempMin = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.min()).rename('tempMin').subtract(273.15)
-            tempMax = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.max()).rename('tempMax').subtract(273.15)
-            tempMean = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.mean()).rename('tempMean').subtract(273.15)
             precTot = filtered_date_dataset.select('total_precipitation_hourly').reduce(ee.Reducer.sum()).rename('precTot').multiply(1000)
 
-            multiband_image = tempMin.addBands(tempMax).addBands(tempMean).addBands(precTot)
-            stats = multiband_image.reduceRegion(reducer = ee.Reducer.mean(), geometry= roi, scale=11132).getInfo()
-            pd.DataFrame(stats, index=[0]).to_csv(out_fc)
+            # disaggregate into single-band image and download
+            prec_tot_image = precTot
+
+            out_fname = f"ERA5L_prec_{nepal_date}.tif"
+            out_path_full = os.path.join(output_path, out_fname)
+            try:
+                region_geojson = roi.geometry().getInfo()
+            except Exception:
+                region_geojson = roi
+
+            # Try preferred export function, fall back to download_ee_image if not available
+            try:
+                # geemap.ee_export_image will synchronously export to a local file when possible
+                geemap.ee_export_image(prec_tot_image, filename=out_path_full, scale=11132, region=region_geojson, file_per_band=False)
+            except Exception as e_export:
+                try:
+                    # older geemap versions provide download_ee_image; use formatted name
+                    geemap.download_ee_image(prec_tot_image, f"ERA5L_prec_{nepal_date}", output_path, "tif", scale=11132, region=region_geojson, crs="EPSG:4326")
+                except Exception as e_download:
+                    raise RuntimeError(f"Both export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
+            time.sleep(0.5)
             print(Back.GREEN + f"..........Finished for {nepal_date}..........")
         
         except Exception as e:
-            print(Back.RED + f"..........Failed for {nepal_date}..........")
-
+            print(Back.RED + f"..........Failed for {nepal_date}..........: {e}")
+            # write full traceback to log for debugging
             with open('error_log.txt', 'a') as error_log:
                 error_log.write(f"Failed for {nepal_date}: {str(e)}\n")
+                error_log.write(traceback.format_exc() + "\n")
 
 if __name__ == "__main__":
     logging.basicConfig()
     results = []
 
-    num_processes = multiprocessing.cpu_count()
     leap_years = [
         1904, 1908, 1912, 1916, 1920, 1924, 1928, 1932, 1936, 1940, 
         1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
         1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    dateList = []
-    for year in range(1950, 1951):
+    for year in range(1990, 1991):
+        dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:
                 max_day = 30
@@ -73,15 +101,19 @@ if __name__ == "__main__":
             for day in range(1, max_day + 1):
                 current_date = ee.Date.fromYMD(year, month, day).advance(-6, 'hour')
                 dateList.append(current_date)
-    
-    chunk_size = len(dateList) // num_processes
 
-    date_chunks = [dateList[i:i + chunk_size] for i in range(0, len(dateList), chunk_size)]
+        # after building dateList for the year, split into chunks and process
+        workers = 15
+        chunk_size = max(1, len(dateList) // workers)
+        date_chunks = [dateList[i:i + chunk_size] for i in range(0, len(dateList), chunk_size)]
 
-    with multiprocessing.Pool(processes=num_processes) as pool:
+        pool = ThreadPool(workers)
+        try:
+            pool.map(process_date, date_chunks)
+        finally:
+            pool.close()
+            pool.join()
 
-        pool.map(process_date, date_chunks)
-    
-    end_time = time.time()
-    print(Back.GREEN + f'Completed.......{datetime.fromtimestamp(end_time)}|||||Completed in {end_time-start_time} sec')
-    
+        end_time = time.time()
+        print(Back.GREEN + f'Completed.......{datetime.fromtimestamp(end_time)}|||||Completed in {end_time-start_time} sec')
+
