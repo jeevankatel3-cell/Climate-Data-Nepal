@@ -89,7 +89,7 @@ if __name__ == "__main__":
         1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
         1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(1990, 1991):
+    for year in range(1990, 2020):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:
@@ -119,4 +119,3 @@ if __name__ == "__main__":
         end_time = time.time()
         print(Back.GREEN + f'Completed.......{datetime.fromtimestamp(end_time)}|||||Completed in {end_time-start_time} sec')
 
-#
