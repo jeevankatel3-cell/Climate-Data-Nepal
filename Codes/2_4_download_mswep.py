@@ -165,8 +165,8 @@ def load_clipped_nc_array(nc_path, vector_gdf, nc_variable_name, log_file_path):
             res_lon = abs(lon[1] - lon[0])
             
             # --- FIX: Calculate the true upper-left *corner* from the cell *centers* ---
-            west = float(lon.min())/2 #- res_lon / 2.0)
-            north = float(lat.max())/2 #+ res_lat / 2.0)
+            west = float(lon.min() - res_lon / 2.0)
+            north = float(lat.max() + res_lat / 2.0)
             
             # --- FIX: Pass positive res_lat. from_origin handles the negative y-scale. ---
             transform = from_origin(west, north, res_lon, res_lat)
