@@ -1,4 +1,9 @@
 climate_downscalingWS/
 Data/Processed/
 Data/Raw/
+<<<<<<< HEAD
 Data/Datasets
+=======
+Data/Datasets/roi_nepal_rectangle
+Data/Datasets/roi_nepal_rectangle.zip
+>>>>>>> 3eb411ca5fd6f6fad62fd08e33b2ce83406ec66b
