@@ -22,16 +22,17 @@ from colorama import Fore, Style
 """
 #########################################################################
 har_crs = (
-    f"+proj=lcc "
-    f"+lat_1={float(32.0)} "
-    f"+lat_2={float(38.0)} "
-    f"+lat_0={float(31.99998856)} "
-    f"+lon_0={float(83.0)} "
-    f"+x_0={float(0.0)} "
-    f"+y_0={float(0.0)} "
-    f"+a={float(6370000.0)} "
-    f"+b={float(6370000.0)} "
-    f"+units=m +no_defs"
+    "+proj=lcc "
+    "+lat_1=32.0 "
+    "+lat_2=38.0 "
+    "+lat_0=31.99998856 "
+    "+lon_0=83.0 "
+    "+x_0=0.0 "
+    "+y_0=0.0 "
+    "+a=6370000.0 "
+    "+b=6370000.0 "
+    "+units=m +no_defs "
+    "+type=crs"
 )
 base_url = "https://data.klima.tu-berlin.de/HAR/v2/d10km/h/2d/"
 base_dir = os.path.dirname(os.getcwd()) 
@@ -201,6 +202,71 @@ def clip_reproject_tif(in_tif_dir, out_tif_dir, clip_geom, out_crs):
             logging.error(Fore.RED + f"Cound not save {tif}: {e}")
         break
 
+#########################################################################
+"""
+██████╗  █████╗ ██╗██╗  ██╗   ██╗    ██████╗ ██████╗  ██████╗██████╗ 
+██╔══██╗██╔══██╗██║██║  ╚██╗ ██╔╝    ██╔══██╗██╔══██╗██╔════╝██╔══██╗
+██║  ██║███████║██║██║   ╚████╔╝     ██████╔╝██████╔╝██║     ██████╔╝
+██║  ██║██╔══██║██║██║    ╚██╔╝      ██╔═══╝ ██╔══██╗██║     ██╔═══╝ 
+██████╔╝██║  ██║██║███████╗██║       ██║     ██║  ██║╚██████╗██║     
+╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚═╝       ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝     
+"""
+#########################################################################
+def calculate_daily_total_precipitation(in_dir, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # List all TIF files
+    tif_files = [f for f in os.listdir(in_dir) if f.endswith('.tif')]
+    if not tif_files:
+        logging.warning(Fore.YELLOW + f"No TIF files found in {in_dir}")
+        return
+
+    # Group files by date (YYYY-MM-DD)
+    files_by_date = {}
+    for tif in tif_files:
+        # Expected format: prcp_YYYY-MM-DD-HH.tif
+        # Extract YYYY-MM-DD
+        try:
+            # Assuming format ends with YYYY-MM-DD-HH.tif
+            # Example: prcp_2020-01-01-06.tif
+            date_str = tif.split('_')[-1][:10] # Get '2020-01-01'
+            if date_str not in files_by_date:
+                files_by_date[date_str] = []
+            files_by_date[date_str].append(tif)
+        except Exception as e:
+            logging.warning(Fore.YELLOW + f"Skipping file with unexpected name format {tif}: {e}")
+
+    for date_str, files in sorted(files_by_date.items()):
+        out_path = os.path.join(out_dir, f"prcp_{date_str}.tif")
+        
+        if os.path.exists(out_path):
+            logging.info(f"Skipping {date_str} (already exists)")
+            continue
+        if len(files) != 24:
+            logging.warning(Fore.YELLOW+f"The {date_str} does not have 24 hrs precipitation, skipping aggregation")
+            continue
+
+        logging.info(Fore.BLUE + f"Calculating daily total for {date_str} from {len(files)} files...")
+        
+        try:
+            daily_total = None
+            
+            for tif in files:
+                tif_path = os.path.join(in_dir, tif)
+                da = rioxarray.open_rasterio(tif_path)
+                
+                if daily_total is None:
+                    daily_total = da
+                else:
+                    daily_total = daily_total + da
+            
+            if daily_total is not None:
+                daily_total.rio.to_raster(out_path)
+                logging.info(Fore.GREEN + f"Saved {out_path}")
+                
+        except Exception as e:
+            logging.error(Fore.RED + f"Failed to calculate daily total for {date_str}: {e}")
+
 if __name__ == '__main__':
     logging.info('Starting HARv2 pipeline')
 
@@ -241,6 +307,14 @@ if __name__ == '__main__':
         out_tif_dir=out_dir_hr_clip_reproject,
         clip_geom=roi,
         out_crs="EPSG:4326"
+    )
+
+    #4. Calculate Daily Total Precipitation
+    logging.info('--- Step 4: Calculating Daily Total Precipitation ---')
+    out_dir_daily_roi = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "4_daily_prcp_roi")
+    calculate_daily_total_precipitation(
+        in_dir=out_dir_hr_clip_reproject,
+        out_dir=out_dir_daily_roi
     )
 
     logging.info(Style.RESET_ALL+'''
