@@ -22,6 +22,7 @@ Workflow:
 import os
 import io
 import sys
+import time  # <-- Added for retry sleep
 from datetime import date, timedelta, datetime
 
 import geopandas as gpd
@@ -313,35 +314,81 @@ def download_and_process_files(drive_service, folder_id, target_filenames, nc_va
             temp_nc_path = os.path.join(temp_dir, filename_to_download)
             print(f"     [{j+1}/8] Processing {filename_to_download}...")
             
+            # ================= RETRY LOGIC START =================
+            max_retries = 5
+            file_success = False
+            data_array = None
+            profile = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    # --- 4a. Download ---
+                    query = f"name='{filename_to_download}' and '{folder_id}' in parents and trashed=false"
+                    response = drive_service.files().list(
+                        q=query, spaces='drive', fields='files(id, name)', pageSize=1
+                    ).execute()
+                    drive_files = response.get('files', [])
+
+                    if not drive_files:
+                        raise FileNotFoundError(f"File not found on Drive: {filename_to_download}")
+                    
+                    file_id = drive_files[0].get('id')
+                    request = drive_service.files().get_media(fileId=file_id)
+                    
+                    with open(temp_nc_path, 'wb') as f:
+                        downloader = MediaIoBaseDownload(f, request)
+                        done = False
+                        while not done:
+                            status, done = downloader.next_chunk()
+
+                    # --- 4b. Process (Clip, Standardize) ---
+                    (data_array, profile) = load_clipped_nc_array(
+                        temp_nc_path, vector_gdf, nc_variable_name, log_file_path
+                    )
+
+                    if data_array is None:
+                        raise Exception(f"Processing (Load/Clip) returned None for {filename_to_download}")
+                    
+                    # If we got here, success!
+                    file_success = True
+                    break  # Exit retry loop
+
+                except Exception as e:
+                    # Clean up potentially bad file before retry
+                    if os.path.exists(temp_nc_path):
+                        try:
+                            os.remove(temp_nc_path)
+                        except:
+                            pass # Ignore delete error during exception handling
+
+                    if attempt < max_retries:
+                        # Rebound: 5s, 10s, 15s, 20s, 25s
+                        wait_seconds = (attempt + 1) * 5
+                        print(f"        ⚠️ Error (Attempt {attempt+1}/{max_retries}): {e}")
+                        print(f"           Retrying in {wait_seconds} seconds...")
+                        time.sleep(wait_seconds)
+                    else:
+                        # Final failure
+                        error_msg = f"Failed to process file {filename_to_download} after {max_retries} retries. Error: {e}"
+                        print(f"     ❌ {error_msg}")
+                        log_error_to_file(log_file_path, f"WorkflowError: {error_msg}")
+                        file_success = False
+            
+            # --- Cleanup Temp File (Always) ---
+            if os.path.exists(temp_nc_path):
+                try:
+                    os.remove(temp_nc_path)
+                except Exception as e:
+                    log_error_to_file(log_file_path, f"CleanupWarning: Failed to remove {temp_nc_path}: {e}")
+
+            # Check if file succeeded; if not, break the day loop
+            if not file_success:
+                day_processed_successfully = False
+                break
+            # ================= RETRY LOGIC END =================
+
+            # --- 4c. Accumulate Sum and All-NaN Mask ---
             try:
-                # --- 4a. Download ---
-                query = f"name='{filename_to_download}' and '{folder_id}' in parents and trashed=false"
-                response = drive_service.files().list(
-                    q=query, spaces='drive', fields='files(id, name)', pageSize=1
-                ).execute()
-                drive_files = response.get('files', [])
-
-                if not drive_files:
-                    raise FileNotFoundError(f"File not found on Drive: {filename_to_download}")
-                
-                file_id = drive_files[0].get('id')
-                request = drive_service.files().get_media(fileId=file_id)
-                
-                with open(temp_nc_path, 'wb') as f:
-                    downloader = MediaIoBaseDownload(f, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-
-                # --- 4b. Process (Clip, Standardize) ---
-                (data_array, profile) = load_clipped_nc_array(
-                    temp_nc_path, vector_gdf, nc_variable_name, log_file_path
-                )
-
-                if data_array is None:
-                    raise Exception(f"Processing failed for {filename_to_download}")
-
-                # --- 4c. Accumulate Sum and All-NaN Mask ---
                 if daily_sum_array is None:
                     daily_sum_array = data_array
                     day_profile = profile
@@ -358,19 +405,11 @@ def download_and_process_files(drive_service, folder_id, target_filenames, nc_va
                     all_nan_mask = all_nan_mask & np.isnan(data_array)
 
             except Exception as e:
-                error_msg = f"Failed to process file {filename_to_download}: {e}"
+                error_msg = f"Failed to accumulate sum for file {filename_to_download}: {e}"
                 print(f"     ❌ {error_msg}")
                 log_error_to_file(log_file_path, f"WorkflowError: {error_msg}")
                 day_processed_successfully = False
                 break  # Stop processing this day
-            
-            finally:
-                # --- 4d. Cleanup Temp File ---
-                if os.path.exists(temp_nc_path):
-                    try:
-                        os.remove(temp_nc_path)
-                    except Exception as e:
-                        log_error_to_file(log_file_path, f"CleanupWarning: Failed to remove {temp_nc_path}: {e}")
 
         # --- 5. Save Final Daily File ---
         if day_processed_successfully:
