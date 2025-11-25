@@ -186,7 +186,7 @@ def process_daily_batch(drive_service: Resource, batch_files: List[str], roi_gdf
     except ValueError:
         date_str = "unknown_date"
 
-    output_filename = f"MSWEP_Daily_Pr_{date_str}.tif"
+    output_filename = f"MSWEP_Prec_{date_str}.tif"
     output_full_path = OUTPUT_FINAL_PATH / output_filename
 
     if output_full_path.exists():
@@ -216,7 +216,7 @@ def process_daily_batch(drive_service: Resource, batch_files: List[str], roi_gdf
                 temp_tifs.append(tif_path)
             
             # Small delay to respect rate limits
-            time.sleep(0.5)
+            #time.sleep(0.5)
 
         # 2. Check if we have enough data
         if not temp_tifs:
@@ -225,33 +225,25 @@ def process_daily_batch(drive_service: Resource, batch_files: List[str], roi_gdf
 
         # 3. Merge (Sum)
         src_files_to_close = []
-        arrays = []
-        profile = None
         
-        for tif in temp_tifs:
-            src = rasterio.open(tif)
-            src_files_to_close.append(src)
-            arrays.append(src.read(1, masked=True))
-            if profile is None:
-                profile = src.profile.copy()
+        try:
+            daily_total = None
+            for tif in temp_tifs:
+                src = rioxarray.open_rasterio(tif)
+                src_files_to_close.append(src)
 
-        if not arrays:
-             return False
+            if daily_total is None:
+                daily_total = src
+            else:
+                daily_total = daily_total + src
 
-        stacked = np.ma.stack(arrays)
-        valid_count = stacked.count(axis=0)
-        daily_sum = np.ma.sum(stacked, axis=0)
+            # 4. Save Final TIF
+            if daily_total is not None:
+                daily_total.rio.to_raster(output_full_path)
+                logging.info(f"Saved {output_full_path}")
+        except Exception as e:
+            log_error(f"Failed to calculate daily total for {date_str}: {e}")
         
-        # Apply Threshold Rule
-        threshold_mask = valid_count < REQUIRED_VALID_FILES
-        daily_sum[threshold_mask] = np.ma.masked
-        daily_sum_filled = daily_sum.filled(NODATA_VALUE)
-
-        # 4. Save Final TIF
-        if profile:
-            profile.update(dtype=rasterio.float32, count=1, compress='lzw', nodata=NODATA_VALUE)
-            with rasterio.open(output_full_path, 'w', **profile) as dst:
-                dst.write(daily_sum_filled.astype(rasterio.float32), 1)
 
         for src in src_files_to_close:
             src.close()
