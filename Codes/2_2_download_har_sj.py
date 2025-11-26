@@ -35,15 +35,29 @@ har_crs = (
     "+type=crs"
 )
 base_url = "https://data.klima.tu-berlin.de/HAR/v2/d10km/h/2d/"
-base_dir = os.path.dirname(os.getcwd()) 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(script_dir) 
 out_dir_nc = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "1_nc_prcp") #original
 out_dir_hr = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "2_hr_prcp") #original subdatasets
 out_dir_hr_clip_reproject = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "3_hr_clp_reprj") #agg daily nepal time
-# out_dir_daily_roi = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "4_daily_prcp_roi") #final clipped wgs84
+out_dir_daily = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "4_daily_prcp") #final clipped wgs84
 roi = gpd.read_file(r"E:\work\climate_downscaling\Data\Datasets\roi_nepal_rectangle.zip")
 roi.to_crs(crs=har_crs, inplace=True)
 
-logging .basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_dir = os.path.join(base_dir, "Data", "Datasets", "Logs")
+os.makedirs(log_dir, exist_ok=True)
+log_filename = os.path.join(log_dir, f"har_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename, mode='w'), 
+        logging.StreamHandler()                      
+    ]
+)
+
+logging.info(f"📝 Logging started. Saving to: {os.path.abspath(log_filename)}")
 #####################################################################
 """
 ███╗   ██╗███████╗████████╗ ██████╗██████╗ ███████╗    ██████╗ ██╗    ██╗███╗   ██╗██╗     ██████╗ 
@@ -60,8 +74,18 @@ def get_file_links(base_url: str, keyword: str = "prcp"):
         r = requests.get(base_url)
         r.raise_for_status()
         nc_files = re.findall(r'href="(.*?\.nc)"', r.text)
-        filtered = [x for x in nc_files if keyword in x]
-        logging.info(Fore.BLUE+f"Found {len(filtered)} matching files")
+        
+        filtered = []
+        for x in nc_files:
+            if keyword in x:
+                # Extract year from filename like HARv2_d10km_h_2d_prcp_c_1989.nc
+                match = re.search(r'_(\d{4})\.nc$', x)
+                if match:
+                    year = int(match.group(1))
+                    if year >= 1989:
+                        filtered.append(x)
+        
+        logging.info(Fore.BLUE+f"Found {len(filtered)} matching files (year >= 1989)")
         return filtered
     except Exception as e:
         logging.error(Fore.RED+f"Failed to fetch file list: {e}")
@@ -179,12 +203,13 @@ def clip_reproject_tif(in_tif_dir, out_tif_dir, clip_geom, out_crs):
         return
     
     for tif in tif_file_list:
-        logging.info(Fore.BLUE+f"Processing {tif}...")
-        tif_full_path = os.path.join(in_tif_dir, tif)
         out_tif_path = os.path.join(out_tif_dir, tif)
 
         if os.path.exists(out_tif_path):
             continue
+
+        logging.info(Fore.BLUE+f"Processing {tif}...")
+        tif_full_path = os.path.join(in_tif_dir, tif)
 
         try:
             ds = rioxarray.open_rasterio(tif_full_path)
@@ -196,11 +221,10 @@ def clip_reproject_tif(in_tif_dir, out_tif_dir, clip_geom, out_crs):
         except Exception as e:
             logging.error(Fore.RED + f"Cound not reproject {tif}: {e}")
         try:
-            print(f"TIF TYPE- {type(reprojected_tif)}")
             reprojected_tif.rio.to_raster(out_tif_path)
         except Exception as e:
             logging.error(Fore.RED + f"Cound not save {tif}: {e}")
-        break
+
 
 #########################################################################
 """
@@ -274,7 +298,7 @@ if __name__ == '__main__':
     logging.info('--- Step 1: Downloading NetCDF Files ---')
     files_to_download = get_file_links(
         base_url=base_url,
-        keyword= "prcp_2020",
+        keyword= "prcp",
 
     )
     total_files = len(files_to_download)
@@ -311,10 +335,9 @@ if __name__ == '__main__':
 
     #4. Calculate Daily Total Precipitation
     logging.info('--- Step 4: Calculating Daily Total Precipitation ---')
-    out_dir_daily_roi = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "4_daily_prcp_roi")
     calculate_daily_total_precipitation(
         in_dir=out_dir_hr_clip_reproject,
-        out_dir=out_dir_daily_roi
+        out_dir=out_dir_daily
     )
 
     logging.info(Style.RESET_ALL+'''
