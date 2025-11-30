@@ -27,7 +27,6 @@ Before running the codes, ensure you have the following:
     - `tqdm`, `colorama`, `retry`
 2.  **Google Earth Engine (GEE)**: You need a GEE account. The scripts use `ee-jeevankatel3` project. You may need to authenticate using `ee.Authenticate()`.
 3.  **Google Drive Credentials**: For MSWEP data, you need a `credentials.json` file (Service Account) to access the Google Drive folder.
-    - Default path: `C:\Users\A S U S\Documents\Keys\credentials.json`
 
 ## 🚀 Workflow & Scripts
 
@@ -67,4 +66,4 @@ These scripts download gridded climate data, process them (convert to TIF, clip 
 - **Authentication**: If GEE fails, try running `ee.Authenticate()` in a separate notebook or terminal.
 
 ---
-*Generated for the Climate Data Workspace.*
+*Generated using Gemini 3 Pro for the Climate Data Workspace.*
