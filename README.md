@@ -2,6 +2,8 @@
 
 Welcome to the Climate Data Analysis Workspace! This project is designed to download, process, and analyze various climate datasets (Precipitation, Temperature, etc.) for the Nepal region. This guide will help you understand the project structure and how to run the scripts.
 
+Last updated: 2025-11-27
+
 ## 📂 Project Structure
 
 The workspace is organized as follows:
