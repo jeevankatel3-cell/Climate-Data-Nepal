@@ -41,8 +41,7 @@ These scripts download gridded climate data, process them (convert to TIF, clip 
 *   **`2_1_download_era5_gee.py`**: Downloads **ERA5-Land** hourly precipitation from GEE, aggregates to daily sums, and exports as TIF.
 *   **`2_2_download_har_ai.py`** / **`2_2_download_har_sj.py`**: Downloads **HARv2** hourly precipitation (NetCDF), converts to daily TIFs, reprojects, and clips to Nepal.
 *   **`2_3_download_chirps.py`**: Downloads **CHIRPS** daily precipitation from GEE.
-*   **`2_4_download_mswep_ag.py`** (Recommended): Downloads **MSWEP** 3-hourly data from Google Drive, converts to TIF, and aggregates to daily sums.
-    *   *Note*: `2_4_download_mswep.py` is an older/alternative version.
+*   **`2_4_download_mswep.py`** (Recommended): Downloads **MSWEP** 3-hourly data from Google Drive, converts to TIF, and aggregates to daily sums.
 *   **`2_5_download_persiann.py`**: Downloads **PERSIANN-CDR** daily precipitation from GEE.
 
 ### Step 3: Analysis
