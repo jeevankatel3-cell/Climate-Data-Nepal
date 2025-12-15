@@ -1,6 +1,8 @@
 #code to download required secondary variables from ERA5-Land
 #variables include: 1. wind speed (u and v component) 2. dewpoint temperature (a measure of relative humidity)
 #3. Surface pressure (atmospheric pressure at the surface)
+#4. Soil moisture (volumetric soil water layer 1)
+#5. Total evaporation (total evaporation)
 
 import ee
 import geemap
@@ -34,9 +36,15 @@ output_path_wind_speed = r'Data/Datasets/ERA5L_2_wind_speed/'
 output_path_dewpoint_temperature = r'Data/Datasets/ERA5L_2_dewpoint_temperature/'
 output_path_surface_pressure = r'Data/Datasets/ERA5L_2_surface_pressure/'
 
+#add soil moisture and total evaporation
+output_path_soil_moisture = r"Data/Datasets/ERA5L_2_soil_moisture/"
+output_path_total_evaporation = r"Data/Datasets/ERA5L_2_total_evaporation/"
+
 os.makedirs(output_path_wind_speed, exist_ok=True)
 os.makedirs(output_path_dewpoint_temperature, exist_ok=True)
 os.makedirs(output_path_surface_pressure, exist_ok=True)
+os.makedirs(output_path_soil_moisture, exist_ok=True)
+os.makedirs(output_path_total_evaporation, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
@@ -44,15 +52,19 @@ era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('2000-01-
 
 def choose_secondary_variable():
     #take variable input from user and return the chosen variable
-    variable = input("Enter the secondary variable (wind_speed, dewpoint_temperature, surface_pressure, all, skip): ").strip()
+    variable = input("Enter the secondary variable (wind_speed, dewpoint_temperature, surface_pressure, soil_moisture, total_evaporation, all, skip): ").strip()
     if variable == 'wind_speed':
         return ['wind_speed']
     elif variable == 'dewpoint_temperature':
         return ['dewpoint_temperature']
     elif variable == 'surface_pressure':
         return ['surface_pressure']
+    elif variable == 'soil_moisture':
+        return ['soil_moisture']
+    elif variable == 'total_evaporation':
+        return ['total_evaporation']
     elif variable == 'all':
-        return ['wind_speed', 'dewpoint_temperature', 'surface_pressure']
+        return ['wind_speed', 'dewpoint_temperature', 'surface_pressure', 'soil_moisture', 'total_evaporation']
     elif variable == 'skip':
         return None    
     else:
@@ -81,6 +93,12 @@ def process_date(date_chunk, variables):
                 elif variable == 'surface_pressure':
                     out_dir = output_path_surface_pressure
                     file_name = f"ERA5L_surface_pressure_{nepal_date}.tif"
+                elif variable == 'soil_moisture':
+                    out_dir = output_path_soil_moisture
+                    file_name = f"ERA5L_soil_moisture_{nepal_date}.tif"
+                elif variable == 'total_evaporation':
+                    out_dir = output_path_total_evaporation
+                    file_name = f"ERA5L_total_evaporation_{nepal_date}.tif"
                 else:
                     continue
 
@@ -102,6 +120,10 @@ def process_date(date_chunk, variables):
                     image_to_export = filtered_date_dataset.select('dewpoint_temperature_2m').reduce(ee.Reducer.mean()).rename('dewpoint_temperature')
                 elif variable == 'surface_pressure':
                     image_to_export = filtered_date_dataset.select('surface_pressure').reduce(ee.Reducer.mean()).rename('surface_pressure')
+                elif variable == 'soil_moisture':
+                    image_to_export = filtered_date_dataset.select('volumetric_soil_water_layer_1').reduce(ee.Reducer.mean()).rename('soil_moisture')
+                elif variable == 'total_evaporation':
+                    image_to_export = filtered_date_dataset.select('total_evaporation_hourly').reduce(ee.Reducer.mean()).rename('total_evaporation')
                 
                 # Get region geometry
                 try:
