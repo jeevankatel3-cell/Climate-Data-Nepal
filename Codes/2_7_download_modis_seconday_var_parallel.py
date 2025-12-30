@@ -6,23 +6,25 @@ from colorama import Fore, Back, init
 from retry import retry
 import logging
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 init(autoreset=True)
-cloud_project = 'ee-jeevankatel3'
+cloud_project = 'ee-jeevankatel987654321'
 try:
+    ee.Authenticate()
     ee.Initialize(project=cloud_project)
 except:
     ee.Authenticate()
     ee.Initialize(project=cloud_project)
 
-start_date = '2022-01-01'
-end_date = '2022-12-31'
+start_date = '2001-01-01'
+end_date = '2020-12-31'
 
-output_path_evi = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_EVI"
-output_path_lst_d = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_lst_d"
-output_path_lst_n = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_lst_n"
-output_path_lst_diff = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_lst_diff"
+output_path_evi = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_EVI_"
+output_path_lst_d = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_d"
+output_path_lst_n = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_n"
+output_path_lst_diff = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_diff"
 
 os.makedirs(output_path_evi, exist_ok=True)
 os.makedirs(output_path_lst_d, exist_ok=True)
@@ -91,24 +93,49 @@ def scale_lst(img):
         logging.error(f"Error scaling LST: {str(e)}")
         return None
 
+def download_single_image(args):
+    image, out_dir, variable, roi_geojson = args
+    try:
+        filename = str(image.get("system:index").getInfo()).replace("_", "")
+        out_path_full = os.path.join(out_dir, f"MODIS_{variable}_{filename}.tif")
+        if os.path.exists(out_path_full):
+            return 0  # Skipped
+        geemap.ee_export_image(image, filename=out_path_full, scale=1000, crs = "EPSG:4326", region=roi_geojson,  file_per_band=False)
+        return 1  # Downloaded
+    except Exception as e:
+        logging.error(f"Error downloading image: {str(e)}")
+        return -1 # Failed
+
 def download_image_collection(image_collection, out_dir, variable):
     try:
         img_list = image_collection.toList(image_collection.size())
         img_count = image_collection.size().getInfo()
         roi_geojson = roi.geometry().getInfo()
+        
+        print(Fore.BLUE + f"Found {img_count} images for {variable}")
+        
+        args_list = []
         for i in range(img_count):
-            image = ee.Image(img_list.get(i))
-            filename = str(image.get("system:index").getInfo()).replace("_", "")
-            out_path_full = os.path.join(out_dir, f"MODIS_{variable}_{filename}.tif")
-            if os.path.exists(out_path_full):
-                print(Fore.YELLOW + f"Skipping {filename}, file already exists")
-                continue
-            try:
-                geemap.ee_export_image(image, filename=out_path_full, scale=1000, region=roi_geojson, file_per_band=False)
-                print(Fore.GREEN + f"Downloaded: {filename}")
-            except Exception as e:
-                print(Fore.RED + f"Failed to download: {filename}")
-                logging.error(f"Error downloading image {filename}: {str(e)}")
+            args_list.append((ee.Image(img_list.get(i)), out_dir, variable, roi_geojson))
+            
+        downloaded = 0
+        skipped = 0
+        failed = 0
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # fast map using process_map or just standard map with tqdm
+            results = list(tqdm(executor.map(download_single_image, args_list), total=img_count, unit="img", desc=f"Downloading {variable}"))
+            
+        for res in results:
+            if res == 1:
+                downloaded += 1
+            elif res == 0:
+                skipped += 1
+            else:
+                failed += 1
+                
+        print(Fore.GREEN + f"Finished {variable}: {downloaded} downloaded, {skipped} skipped, {failed} failed")
+
     except Exception as e:
         logging.error(f"Error downloading image collection: {str(e)}")
 
@@ -174,8 +201,9 @@ if __name__ == "__main__":
     try:
         variables = choose_secondary_variable()
         if variables:
-            with ThreadPoolExecutor() as executor:
-                executor.map(process_download, variables)
+            # Process variables sequentially to keep progress bars clean
+            for var in variables:
+                process_download(var)
     except Exception as e:
         print(Fore.RED + "Failed to download image collection")
         logging.error(f"Error in main: {str(e)}")

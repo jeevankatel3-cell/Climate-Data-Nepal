@@ -1,7 +1,7 @@
 #downloads chirps daily prec from earth engine
 import ee
 import geemap
-cloud_project = 'ee-jeevankatel3'
+cloud_project = 'ee-jeevankatel987654321'
 
 try:
     ee.Initialize(project=cloud_project)
@@ -29,7 +29,7 @@ os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-chirps_dataset = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY').filterDate('1990-01-01', '2020-01-01')
+chirps_dataset = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY').filterDate('2020-01-01', '2020-12-31')
 
 @retry(tries=10, delay=1, backoff=2)
 def process_date(date_chunk):
@@ -54,7 +54,7 @@ def process_date(date_chunk):
             
             prec_tot_image = precTot
 
-            out_fname = f"CHIRPS_precTot_{nepal_date}.tif"
+            out_fname = f"CHIRPS_prec_{nepal_date}.tif"
             out_path_full = os.path.join(output_path, out_fname)
             try:
                 region_geojson = roi.geometry().getInfo()
@@ -67,7 +67,7 @@ def process_date(date_chunk):
                 geemap.ee_export_image(prec_tot_image, filename=out_path_full, scale=5566, region=region_geojson, file_per_band=False)
             except Exception as e_export:
                 try:
-                    geemap.download_ee_image(prec_tot_image, f"CHIRPS_precTot_{nepal_date}", output_path, "tif", scale=5566, region=region_geojson, crs="EPSG:4326")
+                    geemap.download_ee_image(prec_tot_image, f"CHIRPS_prec_{nepal_date}", output_path, "tif", scale=5566, region=region_geojson, crs="EPSG:4326")
                 except Exception as e_download:
                     raise RuntimeError(f"Both export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
             time.sleep(0.5)
@@ -89,7 +89,7 @@ if __name__ == "__main__":
         1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
         1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(1990, 2020):
+    for year in range(2020, 2021):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:

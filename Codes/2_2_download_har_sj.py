@@ -41,7 +41,7 @@ out_dir_nc = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "
 out_dir_hr = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "2_hr_prcp") #original subdatasets
 out_dir_hr_clip_reproject = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "3_hr_clp_reprj") #agg daily nepal time
 out_dir_daily = os.path.join(base_dir, "Data", "Datasets", "Raw", "har_datasets", "4_daily_prcp") #final clipped wgs84
-roi = gpd.read_file(r"E:\work\climate_downscaling\Data\Datasets\roi_nepal_rectangle.zip")
+roi = gpd.read_file(r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\roi_nepal_rectangle\nepal_rectangle_shape.shp")
 roi.to_crs(crs=har_crs, inplace=True)
 
 log_dir = os.path.join(base_dir, "Data", "Datasets", "Logs")
@@ -82,10 +82,10 @@ def get_file_links(base_url: str, keyword: str = "prcp"):
                 match = re.search(r'_(\d{4})\.nc$', x)
                 if match:
                     year = int(match.group(1))
-                    if year >= 1989:
+                    if year >= 2020 and year <= 2020:
                         filtered.append(x)
         
-        logging.info(Fore.BLUE+f"Found {len(filtered)} matching files (year >= 1989)")
+        logging.info(Fore.BLUE+f"Found {len(filtered)} matching files (year >= 1991 and year <= 2020)")
         return filtered
     except Exception as e:
         logging.error(Fore.RED+f"Failed to fetch file list: {e}")
@@ -254,6 +254,7 @@ def calculate_daily_total_precipitation(in_dir, out_dir):
             # Assuming format ends with YYYY-MM-DD-HH.tif
             # Example: prcp_2020-01-01-06.tif
             date_str = tif.split('_')[-1][:10] # Get '2020-01-01'
+            date_str = date_str.replace('-', '')
             if date_str not in files_by_date:
                 files_by_date[date_str] = []
             files_by_date[date_str].append(tif)
@@ -261,7 +262,7 @@ def calculate_daily_total_precipitation(in_dir, out_dir):
             logging.warning(Fore.YELLOW + f"Skipping file with unexpected name format {tif}: {e}")
 
     for date_str, files in sorted(files_by_date.items()):
-        out_path = os.path.join(out_dir, f"prcp_{date_str}.tif")
+        out_path = os.path.join(out_dir, f"HAR_prec_{date_str}.tif")
         
         if os.path.exists(out_path):
             logging.info(f"Skipping {date_str} (already exists)")

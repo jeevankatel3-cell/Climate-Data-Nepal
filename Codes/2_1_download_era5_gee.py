@@ -1,10 +1,11 @@
-##1.1 Importing and Initializing
+
 import ee
 import geemap
 
-cloud_project = 'ee-jeevankatel3'
+cloud_project = 'ee-jeevankatel987654321'
 
 try:
+    ee.Authenticate()
     ee.Initialize(project=cloud_project)
 except:
     ee.Authenticate()
@@ -23,14 +24,21 @@ import pandas as pd
 start_time = time.time()
 roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 
+try:
+    print(Fore.CYAN + "Retrieving region geometry... (this happens once)")
+    region_geojson = roi.geometry().getInfo()
+except Exception as e:
+    print(Fore.RED + f"Warning: Could not retreive client-side geometry. Using server-side object. Error: {e}")
+    region_geojson = roi.geometry()
+
 #select output path
-output_path = r'Data/Datasets/ERA5_land_prec'
+output_path = r'Data/Datasets/ERA5L_prec'
 
 os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('1990-01-01', '2020-01-01')
+era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('1991-01-01', '2020-12-31')
 
 @retry(tries=10, delay=1, backoff=2)
 def process_date(date_chunk):
@@ -52,19 +60,15 @@ def process_date(date_chunk):
 
             out_fname = f"ERA5L_prec_{nepal_date}.tif"
             out_path_full = os.path.join(output_path, out_fname)
-            try:
-                region_geojson = roi.geometry().getInfo()
-            except Exception:
-                region_geojson = roi
 
             # Try preferred export function, fall back to download_ee_image if not available
             try:
                 # geemap.ee_export_image will synchronously export to a local file when possible
-                geemap.ee_export_image(prec_tot_image, filename=out_path_full, scale=11132, region=region_geojson, file_per_band=False)
+                geemap.ee_export_image(prec_tot_image, filename=out_path_full, scale=11132, crs = "EPSG:4326", region=region_geojson, file_per_band=False)
             except Exception as e_export:
                 try:
                     # older geemap versions provide download_ee_image; use formatted name
-                    geemap.download_ee_image(prec_tot_image, f"ERA5L_prec_{nepal_date}", output_path, "tif", scale=11132, region=region_geojson, crs="EPSG:4326")
+                    geemap.download_ee_image(prec_tot_image, f"ERA5L_prec_{nepal_date}", output_path, "tif", crs = "EPSG:4326", scale=11132, region=region_geojson)
                 except Exception as e_download:
                     raise RuntimeError(f"Both export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
             time.sleep(0.5)
@@ -86,7 +90,7 @@ if __name__ == "__main__":
         1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
         1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(1990, 2020):
+    for year in range(1991, 2021):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:

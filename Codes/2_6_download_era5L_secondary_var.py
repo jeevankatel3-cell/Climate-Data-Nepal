@@ -48,7 +48,7 @@ os.makedirs(output_path_total_evaporation, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('2000-01-01', '2020-01-01')
+era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('2000-01-01', '2019-12-31')
 
 def choose_secondary_variable():
     #take variable input from user and return the chosen variable
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     try:
         variables = choose_secondary_variable()
         if variables:
-            for year in range(2000, 2001):
+            for year in range(2000, 2020):
                 dateList = []
                 for month in range(1, 13):
                     max_day = calendar.monthrange(year, month)[1]
