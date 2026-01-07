@@ -1,0 +1,94 @@
+---
+title: "Project Revision Guide: Precipitation Preprocessing & Analysis"
+author: "Antigravity AI"
+date: "2026-01-07"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+---
+
+# Introduction
+
+This document serves as a comprehensive guide to the project's preprocessing and analysis workflows for precipitation data in Nepal. It details the logical flow, methodology, and scientific rationale behind each step.
+
+---
+
+# Section 3: Preprocessing Logic
+
+The preprocessing stage prepares raw satellite and station data for geostatistical analysis and zone characterization.
+
+## 3.1 Climatological Variable Preparation (`3_1_1`)
+- **Objective**: Standardize all primary and secondary variables to a common spatial resolution and coordinate system.
+- **Workflow**:
+    - Resampling all input rasters (ERA5L, PERSIANN, etc.) to **1km spatial resolution**.
+    - Reprofection to **EPSG:4326** for consistent geographical alignment.
+    - Calculation of **pixel-wise climatological means** (1991-2020) to focus on long-term spatial patterns rather than temporal noise.
+
+## 3.2 Feature Weighting via Random Forest (`3_1_2`)
+- **Objective**: Determine the relative importance of topographic and climatological variables in predicting spatial rainfall patterns.
+- **Rationale**: Not all land surface variables contribute equally to precipitation spatial variability. By using **Random Forest Variable Importance**, we derive weights that reflect the "predictive power" of each feature.
+- **Outcome**: These weights are applied during clustering to ensure that features highly correlated with precipitation have a greater influence on zone demarcation.
+
+## 3.3 Spatial Clustering: Weighted K-Means (`3_1_3`)
+- **Objective**: Partition the study area into homogeneous precipitation zones.
+- **Methodology**:
+    - Application of **Weighted K-Means Clustering** using the importance values from `3_1_2`.
+    - **Optimization**: The number of clusters (K) is determined using the **Elbow Method** (minimizing within-cluster sum of squares) and **Silhouette Scores** (maximizing cluster distinctness).
+- **Rationale**: Clustering ensures that variogram analysis and subsequent### Spatial Partitioning Techniques
+
+To account for spatial non-stationarity, the project employs a hierarchical clustering approach:
+
+1.  **Macro-Clustering (Weighted K-Means)**:
+    - Variables are weighted by their importance (e.g., using Random Forest permutation importance).
+    - Optimal $k$ is determined using Elbow and Silhouette plots.
+    - **Refinement**: Manual merging of clusters where spatial proximity or climatic similarity suggests redundancy (e.g., merging cluster 1 into 6, 3 into 2, and 5 into 6).
+
+2.  **Micro-Clustering & Noise Removal (DBSCAN)**:
+    - Applied within macro-clusters to identify spatial outliers.
+    - **Noise Handling**: Extreme outliers (label -1) are treated as individual single-station clusters by assigning them random unique labels, ensuring they are not "lost" or incorrectly grouped during the train/test split.
+
+---
+
+## 2. Station Splitting Strategy
+
+The splitting follows a **Cluster-Consistent 70/30** approach:
+
+- **Logic**: Stations are split into training (70%) and testing (30%) within each cluster.
+- **Implementation**: The split is performed using the `db_cluster` (refined cluster ID) as the grouping index. This ensures that every climatic zone is represented in both the training and evaluation phases, preventing spatial bias.
+
+---
+
+# Section 4: Analysis & Modeling
+
+The analysis stage focuses on quantifying spatial autocorrelation and assessing the accuracy of diverse precipitation products.
+
+## 4.1 Geostatistical Analysis: Variograms (`3_3_1`, `3_4`)
+- **Objective**: Quantify the spatial continuity of precipitation residuals.
+- **Workflow**:
+    - **Detrending**: A linear trend surface (Latitude + Longitude) is removed to satisfy the **Stationarity Assumption**.
+    - **Normal Score Transformation**: Applied to residuals to ensure a Gaussian distribution, a prerequisite for many kriging techniques.
+    - **Model Fitting**: Experimental variograms are fitted with **Gaussian, Spherical, and Exponential** models using Weighted Least Squares (WLS).
+- **Rationale**: This step provides the mathematical basis for interpolation, determining the "range" (distance of autocorrelation) and "sill" (total variance).
+
+## 4.2 Leave-One-Cluster-Out Kriging (`3_5`)
+- **Objective**: Prepare interpolated surface predictors without target leakage.
+- **Methodology**: Kriging is performed by withholding stations from one cluster at a time.
+- **Rationale**: This prevents "circularity" where a station's own value significantly influences the predictor at its own location during machine learning training.
+
+## 4.3 Accuracy Assessment (`4_1`)
+- **Objective**: Evaluate the performance of CHIRPS, PERSIANN, ERA5L, HAR, and MSWEP against in-situ observations.
+- **Metrics**:
+    - **Spearman R**: Captures non-linear monotonic relationships.
+    - **NRMSE (Normalized Root Mean Square Error)**: Quantifies magnitude error.
+    - **PBIAS (Percent Bias)**: Detects systematic over/under-estimation.
+    - **CPI (Compound Performance Index)**: A multi-criteria ranking index to identify the best-performing product overall.
+
+---
+
+# Data Rationale
+
+Based on literature review and exploratory analysis, the following structural decisions were made:
+- **UTM Zone 45N (km)**: Coordinates are projected to metric units for variogram analysis to ensure lag distances are physically meaningful (kilometers).
+- **Seasonal Analysis**: All models are run separately for Winter, Pre-Monsoon, Monsoon, and Post-Monsoon to account for Nepal's distinct seasonal climatology.
