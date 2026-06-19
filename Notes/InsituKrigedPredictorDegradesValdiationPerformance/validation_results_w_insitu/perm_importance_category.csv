@@ -1,0 +1,12 @@
+model,rank,category,n_features,importance_mean,importance_std,baseline_r2,features
+RF,1,Precipitation_sums,5,0.331561,0.014498,0.755383,"era5l_monthly_sum, chirps_monthly_sum, har_monthly_sum, persiann_monthly_sum, mswep_monthly_sum"
+RF,2,Insitu,1,0.118665,0.00759,0.755383,insitu_kriged
+RF,3,MODIS_LST,5,0.027929,0.002908,0.755383,"lst_d_monthly_mean, lst_d_missing_fraction, lst_n_monthly_mean, lst_n_missing_fraction, lst_diff_monthly_mean"
+RF,4,CHIRPS_prec_diagnostics,2,0.02308,0.002724,0.755383,"chirps_wet_day_count, chirps_monthly_std"
+RF,5,GLDAS weather variables,5,0.020966,0.003061,0.755383,"gldas_air_temp, gldas_lwdown, gldas_specific_humidity, gldas_surface_pressure, gldas_swdown"
+RF,6,Temporal,2,0.003108,0.000525,0.755383,"month_sin, month_cos"
+RF,7,Topographic,8,0.001378,0.002479,0.755383,"elev_mean, elev_std, elev_max, elev_min, slope_mean, aspect_mean, elev_smoothed, local_relief"
+RF,8,MODIS_EVI,1,0.000464,0.000643,0.755383,evi_monthly_mean
+RF,9,Cluster,1,-0.000746,0.000414,0.755383,cluster
+RF,10,Fetch,4,-0.000919,0.00066,0.755383,"fetch_1000m_dist, fetch_1000m_dir, fetch_500m_dist, fetch_500m_dir"
+RF,11,Spatial,2,-0.006899,0.001992,0.755383,"y, x"

@@ -1,0 +1,37 @@
+model,rank,feature,category,importance_mean,importance_std
+RF,1,insitu_kriged,Insitu,0.122661,0.007638
+RF,2,chirps_monthly_sum,Precipitation_sums,0.060758,0.003025
+RF,3,era5l_monthly_sum,Precipitation_sums,0.024805,0.002046
+RF,4,persiann_monthly_sum,Precipitation_sums,0.023961,0.001264
+RF,5,mswep_monthly_sum,Precipitation_sums,0.01697,0.001089
+RF,6,gldas_specific_humidity,GLDAS weather variables,0.014852,0.001486
+RF,7,lst_d_missing_fraction,MODIS_LST,0.014404,0.001587
+RF,8,chirps_monthly_std,CHIRPS_prec_diagnostics,0.011956,0.001398
+RF,9,lst_n_missing_fraction,MODIS_LST,0.009947,0.000713
+RF,10,chirps_wet_day_count,CHIRPS_prec_diagnostics,0.009554,0.000785
+RF,11,har_monthly_sum,Precipitation_sums,0.003221,0.000413
+RF,12,gldas_lwdown,GLDAS weather variables,0.003069,0.000568
+RF,13,gldas_swdown,GLDAS weather variables,0.002693,0.001164
+RF,14,month_cos,Temporal,0.001926,0.0004
+RF,15,elev_std,Topographic,0.001334,0.000755
+RF,16,slope_mean,Topographic,0.000967,0.000391
+RF,17,elev_min,Topographic,0.000823,0.000517
+RF,18,month_sin,Temporal,0.000761,0.000293
+RF,19,elev_mean,Topographic,0.000449,0.000554
+RF,20,lst_diff_monthly_mean,MODIS_LST,0.000448,0.000198
+RF,21,lst_n_monthly_mean,MODIS_LST,0.000332,0.000414
+RF,22,fetch_500m_dir,Fetch,0.000303,0.000142
+RF,23,evi_monthly_mean,MODIS_EVI,0.000249,0.000477
+RF,24,fetch_1000m_dir,Fetch,0.000245,0.000314
+RF,25,elev_max,Topographic,0.000224,0.000761
+RF,26,fetch_1000m_dist,Fetch,-0.00013,0.000231
+RF,27,aspect_mean,Topographic,-0.000379,0.000558
+RF,28,lst_d_monthly_mean,MODIS_LST,-0.000476,0.000362
+RF,29,local_relief,Topographic,-0.000832,0.000893
+RF,30,elev_smoothed,Topographic,-0.000926,0.00188
+RF,31,cluster,Cluster,-0.000991,0.00041
+RF,32,fetch_500m_dist,Fetch,-0.001872,0.000475
+RF,33,gldas_surface_pressure,GLDAS weather variables,-0.002216,0.001312
+RF,34,y,Spatial,-0.003053,0.000701
+RF,35,gldas_air_temp,GLDAS weather variables,-0.003422,0.000945
+RF,36,x,Spatial,-0.006052,0.000887
