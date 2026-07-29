@@ -45,33 +45,40 @@ def process_date(date_chunk):
     for myDate in date_chunk:
         try:
             nepal_date = str(myDate.format('YYYYMMdd', timeZone='Asia/Thimphu').getInfo())
-            out_fc = os.path.join(output_path, f"ERA5L_temp_{nepal_date}"+'.tif')
+            out_tmax = os.path.join(output_path, f"ERA5L_tmax_{nepal_date}.tif")
+            out_tmin = os.path.join(output_path, f"ERA5L_tmin_{nepal_date}.tif")
 
-            if os.path.exists(out_fc):
-                print(Fore.YELLOW + f"..........Skipping {nepal_date}, file already exists..........")
+            if os.path.exists(out_tmax) and os.path.exists(out_tmin):
+                print(Fore.YELLOW + f"..........Skipping {nepal_date}, tmax and tmin files already exist..........")
                 continue
             
             print(Back.BLUE + f"..........Started for {nepal_date}..........")
             filtered_date_dataset = era5_dataset.filterDate(myDate, myDate.advance(1, 'day'))
-            temp = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.mean()).rename('temp').subtract(273.15)
 
-            # disaggregate into single-band image and download
-            temp_image = temp
-
-            out_fname = f"ERA5L_temp_{nepal_date}.tif"
-            out_path_full = os.path.join(output_path, out_fname)
-
-            # Try preferred export function, fall back to download_ee_image if not available
-            try:
-                # geemap.ee_export_image will synchronously export to a local file when possible
-                geemap.ee_export_image(temp_image, filename=out_path_full, scale=11132, crs = "EPSG:4326", region=region_geojson, file_per_band=False)
-            except Exception as e_export:
+            # Process tmax if it doesn't exist
+            if not os.path.exists(out_tmax):
+                tmax = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.max()).rename('tmax').subtract(273.15)
                 try:
-                    # older geemap versions provide download_ee_image; use formatted name
-                    geemap.download_ee_image(temp_image, f"ERA5L_temp_{nepal_date}", output_path, "tif", crs = "EPSG:4326", scale=11132, region=region_geojson)
-                except Exception as e_download:
-                    raise RuntimeError(f"Both export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
-            time.sleep(0.5)
+                    geemap.ee_export_image(tmax, filename=out_tmax, scale=11132, crs="EPSG:4326", region=region_geojson, file_per_band=False)
+                except Exception as e_export:
+                    try:
+                        geemap.download_ee_image(tmax, f"ERA5L_tmax_{nepal_date}", output_path, "tif", crs="EPSG:4326", scale=11132, region=region_geojson)
+                    except Exception as e_download:
+                        raise RuntimeError(f"Tmax export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
+                time.sleep(0.5)
+
+            # Process tmin if it doesn't exist
+            if not os.path.exists(out_tmin):
+                tmin = filtered_date_dataset.select('temperature_2m').reduce(ee.Reducer.min()).rename('tmin').subtract(273.15)
+                try:
+                    geemap.ee_export_image(tmin, filename=out_tmin, scale=11132, crs="EPSG:4326", region=region_geojson, file_per_band=False)
+                except Exception as e_export:
+                    try:
+                        geemap.download_ee_image(tmin, f"ERA5L_tmin_{nepal_date}", output_path, "tif", crs="EPSG:4326", scale=11132, region=region_geojson)
+                    except Exception as e_download:
+                        raise RuntimeError(f"Tmin export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
+                time.sleep(0.5)
+
             print(Back.GREEN + f"..........Finished for {nepal_date}..........")
         
         except Exception as e:

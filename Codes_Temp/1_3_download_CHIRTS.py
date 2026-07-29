@@ -24,7 +24,7 @@ start_time = time.time()
 roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 start_year = 2001
 end_year = 2005
-output_path = r'Data_Temp/Datasets/CHIRTS'
+output_path = r'C:/Users/A S U S/Documents/Study/ClimateData/CD-Workspace/Data_Temp/Datasets/CHIRTS'
 os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Pipeline started at: {datetime.fromtimestamp(start_time)}')
@@ -39,11 +39,12 @@ except Exception:
 def process_date_chunk(date_strs):
     for date_str in date_strs:
         try:
-            out_fname = f"CHIRTS_temp_{date_str}.tif"
-            out_path_full = os.path.join(output_path, out_fname)
+            date_str_formatted = date_str.replace('-', '')
+            out_tmax = os.path.join(output_path, f"CHIRTS_tmax_{date_str_formatted}.tif")
+            out_tmin = os.path.join(output_path, f"CHIRTS_tmin_{date_str_formatted}.tif")
 
-            if os.path.exists(out_path_full):
-                print(Fore.YELLOW + f"Skipping {date_str}: File already exists.")
+            if os.path.exists(out_tmax) and os.path.exists(out_tmin):
+                print(Fore.YELLOW + f"Skipping {date_str}: tmax and tmin files already exist.")
                 continue
             
             print(Back.BLUE + f"Starting processing for {date_str}...")
@@ -56,35 +57,53 @@ def process_date_chunk(date_strs):
                 .filterDate(ee_date, ee_date.advance(1, 'day'))
             
             temp_image = chirts_dataset.select(['minimum_temperature', 'maximum_temperature']).first()
-            
-            # Calculate daily mean: (Min + Max) / 2
-            mean_temp_image = temp_image.select('minimum_temperature')\
-                .add(temp_image.select('maximum_temperature'))\
-                .divide(2)\
-                .rename('temp')
-            
-            # Synchronous export routines with defined target projection parameters
-            try:
-                geemap.ee_export_image(
-                    mean_temp_image, 
-                    filename=out_path_full, 
-                    scale=5566, 
-                    region=region_geojson, 
-                    crs="EPSG:4326",
-                    file_per_band=False
-                )
-            except Exception as e_export:
-                geemap.download_ee_image(
-                    mean_temp_image, 
-                    out_fname.replace('.tif', ''), 
-                    output_path, 
-                    "tif", 
-                    scale=5566, 
-                    region=region_geojson, 
-                    crs="EPSG:4326"
-                )
+            # Download tmax if it doesn't exist
+            if not os.path.exists(out_tmax):
+                tmax_image = temp_image.select('maximum_temperature').rename('tmax')
+                try:
+                    geemap.ee_export_image(
+                        tmax_image, 
+                        filename=out_tmax, 
+                        scale=5566, 
+                        region=region_geojson, 
+                        crs="EPSG:4326",
+                        file_per_band=False
+                    )
+                except Exception as e_export:
+                    geemap.download_ee_image(
+                        tmax_image, 
+                        f"CHIRTS_tmax_{date_str_formatted}", 
+                        output_path, 
+                        "tif", 
+                        scale=5566, 
+                        region=region_geojson, 
+                        crs="EPSG:4326"
+                    )
+
+            # Download tmin if it doesn't exist
+            if not os.path.exists(out_tmin):
+                tmin_image = temp_image.select('minimum_temperature').rename('tmin')
+                try:
+                    geemap.ee_export_image(
+                        tmin_image, 
+                        filename=out_tmin, 
+                        scale=5566, 
+                        region=region_geojson, 
+                        crs="EPSG:4326",
+                        file_per_band=False
+                    )
+                except Exception as e_export:
+                    geemap.download_ee_image(
+                        tmin_image, 
+                        f"CHIRTS_tmin_{date_str_formatted}", 
+                        output_path, 
+                        "tif", 
+                        scale=5566, 
+                        region=region_geojson, 
+                        crs="EPSG:4326"
+                    )
                 
-            print(Back.GREEN + f"Successfully downloaded: {date_str}")
+            print(Back.GREEN + f"Successfully downloaded tmax and tmin for: {date_str}")
             time.sleep(0.2)
 
         except Exception as e:

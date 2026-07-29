@@ -218,14 +218,15 @@ def clip_reproject_tif(in_tif_dir, out_tif_dir, clip_geom, out_crs):
         os.remove(temp_ref_path)
 
 # ==========================================
-# Step 4: Daily Mean Calculation
+# Step 4: Daily Tmax and Tmin Calculation
 # ==========================================
 def process_single_day(item, in_dir, out_dir):
     date_str, files = item
     date_str_formatted = date_str.replace("-", "")
-    out_path = os.path.join(out_dir, f"har_temp_{date_str_formatted}.tif")
+    out_path_max = os.path.join(out_dir, f"HAR_tmax_{date_str_formatted}.tif")
+    out_path_min = os.path.join(out_dir, f"HAR_tmin_{date_str_formatted}.tif")
     
-    if os.path.exists(out_path):
+    if os.path.exists(out_path_max) and os.path.exists(out_path_min):
         return
         
     if len(files) != 24:
@@ -233,29 +234,33 @@ def process_single_day(item, in_dir, out_dir):
         return
 
     try:
-        daily_sum = None
+        das = []
         for tif in files:
             tif_path = os.path.join(in_dir, tif)
             da = rioxarray.open_rasterio(tif_path)
-            
-            if daily_sum is None:
-                daily_sum = da
-            else:
-                daily_sum = daily_sum + da
+            das.append(da)
         
-        if daily_sum is not None:
-            # 1. Calculates explicit Mean (Divide by 24)
-            # 2. Scientific conversion: Kelvin -> Celsius (- 273.15)
-            daily_mean = (daily_sum / 24) - 273.15
+        if das:
+            combined = xr.concat(das, dim='time')
             
-            daily_mean.rio.write_crs(da.rio.crs, inplace=True)
-            daily_mean.rio.to_raster(out_path)
-            logging.info(Fore.GREEN + f"Saved strict 24hr daily mean for {date_str}")
+            if not os.path.exists(out_path_max):
+                # Scientific conversion: Kelvin -> Celsius (- 273.15)
+                daily_max = combined.max(dim='time') - 273.15
+                daily_max.rio.write_crs(das[0].rio.crs, inplace=True)
+                daily_max.rio.to_raster(out_path_max)
+                logging.info(Fore.GREEN + f"Saved daily tmax for {date_str}")
+                
+            if not os.path.exists(out_path_min):
+                # Scientific conversion: Kelvin -> Celsius (- 273.15)
+                daily_min = combined.min(dim='time') - 273.15
+                daily_min.rio.write_crs(das[0].rio.crs, inplace=True)
+                daily_min.rio.to_raster(out_path_min)
+                logging.info(Fore.GREEN + f"Saved daily tmin for {date_str}")
             
     except Exception as e:
-        logging.error(Fore.RED + f"Failed to calculate daily mean for {date_str}: {e}")
+        logging.error(Fore.RED + f"Failed to calculate daily tmax/tmin for {date_str}: {e}")
 
-def calculate_daily_mean_temperature(in_dir, out_dir):
+def calculate_daily_tmax_tmin_temperature(in_dir, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     tif_files = [f for f in os.listdir(in_dir) if f.endswith('.tif')]
     
@@ -313,8 +318,8 @@ if __name__ == '__main__':
         clip_geom=roi, out_crs="EPSG:4326"
     )
 
-    logging.info('--- Step 4: Calculating Daily Mean Temperature (Parallel) ---')
-    calculate_daily_mean_temperature(
+    logging.info('--- Step 4: Calculating Daily Tmax and Tmin (Parallel) ---')
+    calculate_daily_tmax_tmin_temperature(
         in_dir=out_dir_hr_clip_reproject, out_dir=out_dir_daily
     )
 
