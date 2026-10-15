@@ -2,7 +2,7 @@
 import ee
 import geemap
 
-cloud_project = 'ee-jeevankatel987654321'
+cloud_project = 'ee-jeevankatel3'
 
 try:
     ee.Authenticate()
@@ -32,13 +32,13 @@ except Exception as e:
     region_geojson = roi.geometry()
 
 #select output path
-output_path = r'Data/Datasets/ERA5L_prec'
+output_path = r'Data/Datasets/ERA5L'
 
 os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('1991-01-01', '2020-12-31')
+era5_dataset = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY').filterDate('2001-01-01', '2026-01-01')
 
 @retry(tries=10, delay=1, backoff=2)
 def process_date(date_chunk):
@@ -53,7 +53,7 @@ def process_date(date_chunk):
             
             print(Back.BLUE + f"..........Started for {nepal_date}..........")
             filtered_date_dataset = era5_dataset.filterDate(myDate, myDate.advance(1, 'day'))
-            precTot = filtered_date_dataset.select('total_precipitation_hourly').reduce(ee.Reducer.sum()).rename('precTot').multiply(1000)
+            precTot = filtered_date_dataset.select('total_precipitation_hourly').reduce(ee.Reducer.sum()).rename('prec').multiply(1000)
 
             # disaggregate into single-band image and download
             prec_tot_image = precTot
@@ -90,7 +90,7 @@ if __name__ == "__main__":
         1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
         1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(1991, 2021):
+    for year in range(2001, 2026):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:

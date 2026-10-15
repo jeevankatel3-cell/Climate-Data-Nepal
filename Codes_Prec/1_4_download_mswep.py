@@ -1,60 +1,81 @@
-import os
-import io
-import time
-import logging
-import concurrent.futures
-from datetime import date, timedelta, datetime
-from pathlib import Path
-from typing import List, Optional, Tuple
+"""
+MSWEP 3-hourly (UTC) -> daily precipitation totals for the LOCAL (Nepal) calendar day,
+clipped to an ROI and written as GeoTIFF.
 
-import numpy as np
-import pandas as pd
+How the local day is built
+--------------------------
+MSWEP files are 3-hourly and stamped in UTC. Nepal is UTC+05:45; because the data come in
+3-hour steps the closest whole-step shift is 6 h (a ~15 min approximation).
+Local day D = [D 00:00, D+1 00:00) local = [D-1 18:00, D 18:00) UTC, so each local day needs
+8 files, the first of which belongs to the PREVIOUS UTC day (for 1 Jan that means 31 Dec of
+the previous year). Files are therefore computed per local day instead of being sliced
+out of one long list.
+
+!! Check STAMP_IS_PERIOD_START against the MSWEP documentation / a file's `time` attribute.
+   True  -> the stamp marks the START of the 3-h accumulation (needs 18h and 21h of day D-1)
+   False -> the stamp marks the END of the accumulation   (needs 21h of day D-1 and 18h of day D)
+"""
+import io
+import logging
+import os
+import tempfile
+import time
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional
+
 import geopandas as gpd
 import xarray as xr
-import rioxarray
-import rasterio
-from tqdm import tqdm
+import rioxarray  # noqa: F401  (registers the .rio accessor)
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from googleapiclient.discovery import build, Resource
 from googleapiclient.http import MediaIoBaseDownload
+from tqdm import tqdm
 
 # --- Configuration ---
 CREDENTIAL_FILE = Path(r"C:\Users\A S U S\Documents\Keys\credentials.json")
 FOLDER_URL = "https://drive.google.com/drive/folders/1DVR90Ud1C444bTOPeENX-3I7tgqPLnao"
 FOLDER_ID = FOLDER_URL.split('/folders/')[-1].split('?')[0]
-OUTPUT_TEMP_PATH = Path(r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MSWEP_TEMP")
-OUTPUT_FINAL_PATH = Path(r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MSWEP_TIF")
-ROI_PATH = Path(r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\roi_nepal_rectangle\nepal_rectangle_shape.shp")
-VARIABLE_NAME = "precipitation"
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-START_YEAR = 2020
-END_YEAR = 2021  # Exclusive
-NODATA_VALUE = -9999
-MAX_RETRIES = 5
-BATCH_SIZE = 8
-REQUIRED_VALID_FILES = 6  # Threshold for daily aggregation
 
-# --- Setup Logging ---
+# Scratch space on a LOCAL disk (the network share is slow for lots of small read/write cycles).
+OUTPUT_TEMP_PATH = Path(tempfile.gettempdir()) / "MSWEP_TEMP"
+OUTPUT_FINAL_PATH = Path(r"//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Precipitation/Data/Datasets/MSWEP")
+ROI_PATH = Path(r"//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Temperature/Data/Datasets/roi_nepal_rectangle/nepal_rectangle_shape.shp")
+
+VARIABLE_NAME = "precipitation"
+X_DIM, Y_DIM = "lon", "lat"
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+
+START_YEAR = 2001
+END_YEAR = 2026            # exclusive
+
+UTC_OFFSET_HOURS = 6       # Nepal = UTC+05:45 -> nearest multiple of the 3-h step
+STAMP_IS_PERIOD_START = True   # VERIFY (see module docstring)
+STEP_HOURS = 3
+STEPS_PER_DAY = 24 // STEP_HOURS   # 8
+
+NODATA_VALUE = -9999.0
+MAX_RETRIES = 5
+
+
+# --- Logging ---
 OUTPUT_FINAL_PATH.mkdir(parents=True, exist_ok=True)
 OUTPUT_TEMP_PATH.mkdir(parents=True, exist_ok=True)
-
-log_file_path = OUTPUT_FINAL_PATH / "download_errors.log"
 logging.basicConfig(
-    filename=log_file_path,
-    level=logging.ERROR,
+    filename=OUTPUT_FINAL_PATH / "download_errors.log",
+    level=logging.INFO,
     format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
 )
 
+
 def log_error(message: str):
-    """Logs an error message to the file and prints it to console."""
     logging.error(message)
-    print(f"❌ {message}")
+    tqdm.write(f"❌ {message}")      # tqdm.write keeps the progress bar intact
 
-# --- Helper Functions ---
 
+# --- Drive helpers ---
 def initialize_drive_service() -> Optional[Resource]:
-    """Initializes and returns the Google Drive API service."""
     try:
         creds = ServiceAccountCredentials.from_service_account_file(str(CREDENTIAL_FILE), scopes=SCOPES)
         return build('drive', 'v3', credentials=creds)
@@ -62,213 +83,156 @@ def initialize_drive_service() -> Optional[Resource]:
         log_error(f"initialize_drive_service: Error loading credentials: {e}")
         return None
 
-def generate_file_list(start_year: int, end_year: int) -> List[str]:
-    """Generates a list of filenames for the specified year range."""
-    core_filename_list = []
-    
-    start_date = datetime(start_year, 1, 1)
-    end_date = datetime(end_year, 1, 1)
-    
-    # We need 3-hourly data
-    date_range = pd.date_range(start=start_date, end=end_date - timedelta(hours=3), freq='3h')
 
-    for dt in date_range:
-        year_str = str(dt.year)
-        doy = str(dt.timetuple().tm_yday).zfill(3)
-        hour_str = str(dt.hour).zfill(2)
-        filename = f'{year_str}{doy}.{hour_str}.nc'
-        core_filename_list.append(filename)
+def build_drive_index(drive_service: Resource) -> Dict[str, dict]:
+    """List the folder ONCE (paginated) and map filename -> {id, size}.
+    Replaces ~73,000 individual files().list() calls."""
+    index: Dict[str, dict] = {}
+    page_token = None
+    query = f"'{FOLDER_ID}' in parents and trashed=false"
+    while True:
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = drive_service.files().list(
+                    q=query, spaces='drive', pageSize=1000, pageToken=page_token,
+                    fields='nextPageToken, files(id, name, size)',
+                    supportsAllDrives=True, includeItemsFromAllDrives=True,
+                ).execute()
+                break
+            except Exception as e:
+                log_error(f"build_drive_index: attempt {attempt + 1} failed: {e}")
+                time.sleep(2 ** attempt)
+        else:
+            raise RuntimeError("Could not list the Drive folder after retries")
 
-    # Buffer files from 1989 for time shift
-    buffer_files = ['1989365.18.nc', '1989365.21.nc']
-    final_list = buffer_files + core_filename_list
-    
-    # Remove the last two files to maintain the count
-    final_list = final_list[:-2]
-    
-    print(f"Total files in list: {len(final_list)}")
-    return final_list
+        for f in resp.get('files', []):
+            index[f['name']] = {'id': f['id'], 'size': int(f['size']) if 'size' in f else None}
+        page_token = resp.get('nextPageToken')
+        if not page_token:
+            return index
 
-def get_file_id(drive_service: Resource, filename: str) -> Optional[str]:
-    """Finds the file ID for a given filename with retry logic."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            query = f"name='{filename}' and '{FOLDER_ID}' in parents and trashed=false"
-            response = drive_service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=1000).execute()
-            files = response.get('files', [])
-            if not files:
-                return None
-            return files[0]['id']
-        except Exception as e:
-            log_error(f"get_file_id: Attempt {attempt + 1} failed for {filename}: {e}")
-            time.sleep(2 ** attempt)
-    return None
 
-def download_file_with_retry(drive_service: Resource, file_id: str, filename: str, output_path: Path) -> Optional[Path]:
-    """Downloads a file with retry logic and immediate validation."""
-    dest_path = output_path / filename
+def is_valid_netcdf(path: Path, expected_size: Optional[int]) -> bool:
+    try:
+        if expected_size is not None and path.stat().st_size != expected_size:
+            return False
+        with xr.open_dataset(path, engine='netcdf4'):
+            pass
+        return True
+    except Exception:
+        return False
 
-    # Check if existing file is valid
-    if dest_path.exists():
-        try:
-            with xr.open_dataset(dest_path, engine='netcdf4') as ds:
-                pass
-            return dest_path
-        except Exception:
-            log_error(f"Existing file {filename} is corrupt. Re-downloading.")
-            dest_path.unlink()
+
+def download_file(drive_service: Resource, entry: dict, filename: str, out_dir: Path) -> Optional[Path]:
+    dest = out_dir / filename
+    if dest.exists():
+        if is_valid_netcdf(dest, entry['size']):
+            return dest
+        log_error(f"Existing file {filename} is corrupt/incomplete. Re-downloading.")
+        dest.unlink()
 
     for attempt in range(MAX_RETRIES):
         try:
-            request = drive_service.files().get_media(fileId=file_id)
-            with io.FileIO(str(dest_path), 'wb') as fh:
-                # Increased chunk size to 10MB for speed
+            request = drive_service.files().get_media(fileId=entry['id'])
+            with io.FileIO(str(dest), 'wb') as fh:
                 downloader = MediaIoBaseDownload(fh, request, chunksize=10 * 1024 * 1024)
                 done = False
                 while not done:
-                    status, done = downloader.next_chunk()
-            
-            # Validate immediately
-            with xr.open_dataset(dest_path, engine='netcdf4') as ds:
-                pass
-            return dest_path
-
+                    _, done = downloader.next_chunk()
+            if is_valid_netcdf(dest, entry['size']):
+                return dest
+            raise IOError("downloaded file failed size/NetCDF validation")
         except Exception as e:
             log_error(f"Attempt {attempt + 1} failed for {filename}: {e}")
-            if dest_path.exists():
-                try:
-                    # Log first 100 bytes to debug HTML errors
-                    with open(dest_path, 'rb') as f:
-                        header = f.read(100)
-                    log_error(f"File header: {header}")
-                except Exception:
-                    pass
-                dest_path.unlink()
-            
+            dest.unlink(missing_ok=True)
             if attempt < MAX_RETRIES - 1:
                 time.sleep(2 ** attempt)
-                
     return None
 
-def net_cdf_to_tif(netcdf_path: Path, output_dir: Path, roi_gdf: gpd.GeoDataFrame) -> Optional[Path]:
-    """Converts a NetCDF file to a TIF, clipped to ROI."""
-    try:
-        with xr.open_dataset(netcdf_path, engine='netcdf4') as ds:
-            if 'lon' in ds.coords and 'lat' in ds.coords:
-                ds = ds.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)
-            ds.rio.write_crs("EPSG:4326", inplace=True)
 
-            if roi_gdf.crs != "EPSG:4326":
-                roi_4326 = roi_gdf.to_crs("EPSG:4326")
-            else:
-                roi_4326 = roi_gdf
+# --- Time handling ---
+def utc_stamp_to_filename(dt: datetime) -> str:
+    return f"{dt.year}{dt.timetuple().tm_yday:03d}.{dt.hour:02d}.nc"
 
-            ds_clipped = ds.rio.clip(roi_4326.geometry, roi_4326.crs, drop=True)
-            
-            basename = netcdf_path.stem + '.tif'
-            output_path = output_dir / basename
-            
-            ds_clipped[VARIABLE_NAME].isel(time=0).rio.to_raster(output_path)
-            
-        return output_path
-    except Exception as e:
-        log_error(f"net_cdf_to_tif: Error processing {netcdf_path}: {e}")
-        return None
 
-def process_daily_batch(drive_service: Resource, batch_files: List[str], roi_gdf: gpd.GeoDataFrame) -> bool:
-    """Downloads files sequentially, converts, sums, and saves."""
-    last_filename = batch_files[-1]
-    try:
-        y_str = last_filename[:4]
-        doy_str = last_filename[4:7]
-        date_obj = datetime.strptime(f"{y_str}{doy_str}", "%Y%j").date()
-        date_str = date_obj.strftime("%Y%m%d")
-    except ValueError:
-        date_str = "unknown_date"
+def files_for_local_day(day: date) -> List[str]:
+    """The 8 UTC 3-hourly files that make up one LOCAL calendar day (see module docstring)."""
+    local_midnight_in_utc = datetime(day.year, day.month, day.day) - timedelta(hours=UTC_OFFSET_HOURS)
+    first = local_midnight_in_utc if STAMP_IS_PERIOD_START else local_midnight_in_utc + timedelta(hours=STEP_HOURS)
+    return [utc_stamp_to_filename(first + timedelta(hours=STEP_HOURS * i)) for i in range(STEPS_PER_DAY)]
 
-    output_filename = f"MSWEP_Prec_{date_str}.tif"
-    output_full_path = OUTPUT_FINAL_PATH / output_filename
 
-    if output_full_path.exists():
+# --- Raster processing ---
+def load_clipped(nc_path: Path, roi_4326: gpd.GeoDataFrame) -> xr.DataArray:
+    """Open one NetCDF, take the precipitation field, clip to ROI, load into memory."""
+    with xr.open_dataset(nc_path, engine='netcdf4') as ds:
+        da = ds[VARIABLE_NAME]
+        if 'time' in da.dims:
+            da = da.isel(time=0, drop=True)
+        da = da.rio.set_spatial_dims(x_dim=X_DIM, y_dim=Y_DIM).rio.write_crs("EPSG:4326")
+        da = da.rio.clip(roi_4326.geometry, roi_4326.crs, drop=True)
+        return da.load()
+
+
+def build_daily_total(nc_paths: List[Path], roi_4326: gpd.GeoDataFrame) -> xr.DataArray:
+    """Sum the 3-hourly fields (mm / 3 h) into mm / day. NaN in any step -> NaN in the total
+    (a silently partial sum would be biased low)."""
+    total = None
+    for p in nc_paths:
+        da = load_clipped(p, roi_4326)
+        total = da if total is None else total + da
+    return total
+
+
+def write_geotiff(total: xr.DataArray, out_path: Path) -> None:
+    total = total.rio.set_spatial_dims(x_dim=X_DIM, y_dim=Y_DIM)
+    if float(total[Y_DIM][0]) < float(total[Y_DIM][-1]):          # ascending lat -> south-up GeoTIFF
+        total = total.sortby(Y_DIM, ascending=False)
+    total = (total.astype('float32')
+                  .fillna(NODATA_VALUE)
+                  .rio.write_crs("EPSG:4326")
+                  .rio.write_nodata(NODATA_VALUE, encoded=True))
+    tmp = out_path.with_name(out_path.name + ".part")
+    total.rio.to_raster(tmp, driver="GTiff", compress="deflate")
+    os.replace(tmp, out_path)                                     # atomic: no half-written "final" files
+
+
+def process_local_day(drive_service: Resource, index: Dict[str, dict], day: date,
+                      roi_4326: gpd.GeoDataFrame) -> bool:
+    out_path = OUTPUT_FINAL_PATH / f"MSWEP_Prec_{day:%Y%m%d}.tif"
+    if out_path.exists():
         return True
 
-    temp_tifs = []
-    temp_ncs = []
-    
+    nc_paths: List[Path] = []
     try:
-        # 1. Sequential Download and Convert
-        for fname in batch_files:
-            # Get ID
-            fid = get_file_id(drive_service, fname)
-            if not fid:
-                log_error(f"File not found in Drive: {fname}")
-                continue
+        for fname in files_for_local_day(day):
+            entry = index.get(fname)
+            if entry is None:
+                log_error(f"{day}: {fname} not found in Drive folder -> day skipped (no partial sums)")
+                return False
+            p = download_file(drive_service, entry, fname, OUTPUT_TEMP_PATH)
+            if p is None:
+                log_error(f"{day}: could not download {fname} -> day skipped")
+                return False
+            nc_paths.append(p)
 
-            # Download
-            nc_path = download_file_with_retry(drive_service, fid, fname, OUTPUT_TEMP_PATH)
-            if not nc_path:
-                continue
-            temp_ncs.append(nc_path)
-
-            # Convert
-            tif_path = net_cdf_to_tif(nc_path, OUTPUT_TEMP_PATH, roi_gdf)
-            if tif_path:
-                temp_tifs.append(tif_path)
-            
-            # Small delay to respect rate limits
-            #time.sleep(0.5)
-
-        # 2. Check if we have enough data
-        if not temp_tifs:
-            log_error(f"No valid files downloaded for {date_str}")
-            return False
-
-        # 3. Merge (Sum)
-        src_files_to_close = []
-        
-        try:
-            daily_total = None
-            for tif in temp_tifs:
-                src = rioxarray.open_rasterio(tif)
-                src_files_to_close.append(src)
-
-            if daily_total is None:
-                daily_total = src
-            else:
-                daily_total = daily_total + src
-
-            # 4. Save Final TIF
-            if daily_total is not None:
-                daily_total.rio.to_raster(output_full_path)
-                logging.info(f"Saved {output_full_path}")
-        except Exception as e:
-            log_error(f"Failed to calculate daily total for {date_str}: {e}")
-        
-
-        for src in src_files_to_close:
-            src.close()
-
+        total = build_daily_total(nc_paths, roi_4326)
+        write_geotiff(total, out_path)
+        logging.info(f"Saved {out_path.name}")
         return True
-
     except Exception as e:
-        log_error(f"process_daily_batch: Failed batch ending {batch_files[-1]}: {e}")
+        log_error(f"process_local_day {day}: {e}")
         return False
     finally:
-        # Cleanup
-        for f in temp_ncs:
-            if f.exists():
-                try: f.unlink()
-                except OSError: pass
-        for f in temp_tifs:
-            if f.exists():
-                try: f.unlink()
-                except OSError: pass
+        for p in nc_paths:
+            p.unlink(missing_ok=True)
 
-# --- Main Execution ---
 
+# --- Main ---
 def main():
-    print("🚀 Starting MSWEP Download and Processing Script...")
-    
+    assert UTC_OFFSET_HOURS % STEP_HOURS == 0, "UTC_OFFSET_HOURS must be a multiple of the 3-h step"
+    print("🚀 Starting MSWEP download + local-day aggregation...")
+
     drive_service = initialize_drive_service()
     if not drive_service:
         print("❌ Failed to initialize Drive service. Exiting.")
@@ -276,32 +240,37 @@ def main():
 
     try:
         roi = gpd.read_file(ROI_PATH)
+        roi_4326 = roi.to_crs("EPSG:4326") if roi.crs is not None else roi.set_crs("EPSG:4326")
     except Exception as e:
         log_error(f"Failed to load ROI shapefile: {e}")
         return
 
-    file_list = generate_file_list(START_YEAR, END_YEAR)
-    
-    batches = [file_list[i:i + BATCH_SIZE] for i in range(0, len(file_list), BATCH_SIZE)]
-    
-    print(f"📅 Processing {len(batches)} daily batches...")
+    print("📂 Indexing Drive folder...")
+    index = build_drive_index(drive_service)
+    print(f"   {len(index)} files found")
 
-    with tqdm(total=len(batches), desc="Processing Days", unit="day") as pbar:
-        for batch in batches:
-            if len(batch) < BATCH_SIZE:
-                log_error(f"Skipping incomplete batch: {batch}")
-                pbar.update(1)
-                continue
-                
-            success = process_daily_batch(drive_service, batch, roi)
-            if success:
-                pbar.set_postfix_str(f"Last: {batch[-1]}")
-            else:
-                pbar.set_postfix_str("Error in batch")
-            
+    first_day, end_day = date(START_YEAR, 1, 1), date(END_YEAR, 1, 1)
+    days = [first_day + timedelta(days=i) for i in range((end_day - first_day).days)]
+
+    # Pre-flight: the first and last days reach into neighbouring UTC days / years
+    for d in (days[0], days[-1]):
+        missing = [f for f in files_for_local_day(d) if f not in index]
+        if missing:
+            print(f"⚠️  {d}: files missing from Drive: {missing}")
+
+    failed: List[date] = []
+    with tqdm(total=len(days), desc="Processing days", unit="day") as pbar:
+        for d in days:
+            if not process_local_day(drive_service, index, d, roi_4326):
+                failed.append(d)
             pbar.update(1)
 
-    print("\n✅ Processing complete. Check logs for any errors.")
+    if failed:
+        fail_file = OUTPUT_FINAL_PATH / "failed_days.txt"
+        fail_file.write_text("\n".join(d.isoformat() for d in failed))
+        print(f"\n⚠️  {len(failed)} day(s) failed -> {fail_file}. Re-run the script to retry them.")
+    print("\n✅ Processing complete.")
+
 
 if __name__ == "__main__":
     main()

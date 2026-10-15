@@ -20,7 +20,7 @@ cloud_project = 'ee-jeevankatel3'
 try:
     ee.Initialize(project=cloud_project)
 except Exception:
-    ee.Authenticate()
+    ee.Authenticate(force=True)
     ee.Initialize(project=cloud_project)
 
 start_time = time.time()
@@ -46,7 +46,7 @@ os.makedirs(outpath_soil_moisture, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-gldas_dataset = ee.ImageCollection("NASA/GLDAS/V021/NOAH/G025/T3H").filterDate('2001-01-01', '2005-12-31')
+gldas_dataset = ee.ImageCollection("NASA/GLDAS/V021/NOAH/G025/T3H").filterDate('2025-01-01', '2025-12-31')
 
 def choose_secondary_variable():
     variable = input("Enter the secondary variable (air temperature, specific humidity, wind speed, surface pressure, sw down, lw down, soil moisture, all, skip): ").strip()
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     try:
         variables = choose_secondary_variable()
         if variables:
-            for year in range(2001, 2006):
+            for year in range(2001, 2026):
                 dateList = []
                 for month in range(1, 13):
                     max_day = calendar.monthrange(year, month)[1]
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                         date_str = f"{year}{month:02d}{day:02d}"
                         dateList.append((current_date, date_str))
 
-                workers = 9
+                workers = 2
                 chunk_size = max(1, len(dateList) // workers)
                 date_chunks = [dateList[i:i + chunk_size] for i in range(0, len(dateList), chunk_size)]
 

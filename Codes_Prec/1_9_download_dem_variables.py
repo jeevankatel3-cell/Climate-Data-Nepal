@@ -119,3 +119,9 @@ else:
     except Exception as e:
         print(Fore.RED + f"Failed to download 90m DEM: {str(e)}")
         logging.error(f"Error downloading 90m DEM: {str(e)}")
+
+# save elevation_mean at bigger grid size
+dem_1km_outpath = os.path.join(out_dir, "DEM_1km_elevation_mean_bigger_grid.tif")
+projection = elevation_mean.projection()
+scale = projection.nominalScale().getInfo()
+geemap.ee_export_image(elevation_mean, filename=dem_1km_outpath, region=nepal_bigger_roi_geom, crs="EPSG:4326", scale=scale, file_per_band=False)

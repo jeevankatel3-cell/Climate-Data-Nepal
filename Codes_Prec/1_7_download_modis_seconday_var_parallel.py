@@ -10,18 +10,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 init(autoreset=True)
-cloud_project = 'ee-jeevankatel987654321'
+cloud_project = 'precise-dragon-506105-b9'
 try:
-    ee.Authenticate()
     ee.Initialize(project=cloud_project)
-except:
-    ee.Authenticate()
+except:   
+    ee.Authenticate(force=True)
     ee.Initialize(project=cloud_project)
 
-start_date = '2001-01-01'
-end_date = '2020-12-31'
+start_date = '2015-06-18'
+end_date = '2025-12-31'
 
-output_path_evi = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_EVI_"
+output_path_evi = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_evi"
 output_path_lst_d = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_d"
 output_path_lst_n = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_n"
 output_path_lst_diff = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\MODIS_2_lst_diff"

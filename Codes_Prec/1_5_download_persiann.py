@@ -23,7 +23,7 @@ start_time = time.time()
 roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 
 #select output path
-output_path = r'Data/Datasets/PERSIANN_prec'
+output_path = r'//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Precipitation/Data/Datasets/PERSIANN'
 
 os.makedirs(output_path, exist_ok=True)
 
@@ -67,7 +67,7 @@ def process_date(date_chunk):
                 geemap.ee_export_image(prec_tot_image, filename=out_path_full, scale=27830, crs = "EPSG:4326", region=region_geojson, file_per_band=False)
             except Exception as e_export:
                 try:
-                    geemap.download_ee_image(prec_tot_image, f"PERSIANN_precTot_{nepal_date}", output_path, "tif", scale=27830, crs = "EPSG:4326", region=region_geojson, crs="EPSG:4326")
+                    geemap.download_ee_image(prec_tot_image, f"PERSIANN_precTot_{nepal_date}", output_path, "tif", scale=27830, crs = "EPSG:4326", region=region_geojson)
                 except Exception as e_download:
                     raise RuntimeError(f"Both export methods failed: ee_export_image error: {e_export}; download_ee_image error: {e_download}")
             time.sleep(0.5)
@@ -84,12 +84,9 @@ if __name__ == "__main__":
     logging.basicConfig()
     results = []
 
-    leap_years = [
-        1904, 1908, 1912, 1916, 1920, 1924, 1928, 1932, 1936, 1940, 
-        1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
-        1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
+    leap_years = [2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(1991, 2021):
+    for year in range(2001, 2026):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:

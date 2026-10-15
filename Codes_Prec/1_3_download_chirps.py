@@ -1,7 +1,7 @@
 #downloads chirps daily prec from earth engine
 import ee
 import geemap
-cloud_project = 'ee-jeevankatel987654321'
+cloud_project = 'ee-jeevankatel3'
 
 try:
     ee.Initialize(project=cloud_project)
@@ -23,13 +23,13 @@ start_time = time.time()
 roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 
 #select output path
-output_path = r'Data/Datasets/CHIRPS_prec'
+output_path = r"//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Precipitation/Data/Datasets/CHIRPS"
 
 os.makedirs(output_path, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-chirps_dataset = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY').filterDate('2020-01-01', '2020-12-31')
+chirps_dataset = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY').filterDate('2001-01-01', '2025-12-31')
 
 @retry(tries=10, delay=1, backoff=2)
 def process_date(date_chunk):
@@ -84,12 +84,9 @@ if __name__ == "__main__":
     logging.basicConfig()
     results = []
 
-    leap_years = [
-        1904, 1908, 1912, 1916, 1920, 1924, 1928, 1932, 1936, 1940, 
-        1944, 1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 
-        1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024]
+    leap_years = [2004, 2008, 2012, 2016, 2020, 2024]
 
-    for year in range(2020, 2021):
+    for year in range(2001, 2026):
         dateList = []
         for month in range(1, 13):
             if month in [4, 6, 9, 11]:
@@ -118,4 +115,3 @@ if __name__ == "__main__":
 
         end_time = time.time()
         print(Back.GREEN + f'Completed.......{datetime.fromtimestamp(end_time)}|||||Completed in {end_time-start_time} sec')
-
