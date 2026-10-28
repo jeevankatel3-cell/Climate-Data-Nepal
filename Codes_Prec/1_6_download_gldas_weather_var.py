@@ -27,14 +27,14 @@ start_time = time.time()
 roi = ee.FeatureCollection("projects/ee-jeevankatel3/assets/nepRect")
 region_geom = roi.geometry()
 
+
 # select output path
-outpath_air_temp = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\air_temp"
-outpath_specific_humidity = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\specific_humidity"
-outpath_wind_speed = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\wind_speed"
-outpath_surface_pressure = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\surface_pressure"
-outpath_swdown = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\swdown"
-outpath_lwdown = r"C:\Users\A S U S\Documents\Study\ClimateData\CD-Workspace\Data\Datasets\GLDAS\lwdown"
-outpath_soil_moisture = r"../Data/Datasets/GLDAS/soil_moisture"
+outpath_air_temp = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\air_temp"
+outpath_specific_humidity = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\specific_humidity"
+outpath_wind_speed = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\wind_speed"
+outpath_surface_pressure = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\surface_pressure"
+outpath_swdown = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\swdown"
+outpath_lwdown = r"E:\ClimateData_Precipitation\Data\Datasets\GLDAS\lwdown"
 
 os.makedirs(outpath_air_temp, exist_ok=True)
 os.makedirs(outpath_specific_humidity, exist_ok=True)
@@ -42,11 +42,10 @@ os.makedirs(outpath_wind_speed, exist_ok=True)
 os.makedirs(outpath_surface_pressure, exist_ok=True)
 os.makedirs(outpath_swdown, exist_ok=True)
 os.makedirs(outpath_lwdown, exist_ok=True)
-os.makedirs(outpath_soil_moisture, exist_ok=True)
 
 print(Fore.BLUE + f'Started at..........{datetime.fromtimestamp(start_time)}')
 
-gldas_dataset = ee.ImageCollection("NASA/GLDAS/V021/NOAH/G025/T3H").filterDate('2025-01-01', '2025-12-31')
+gldas_dataset = ee.ImageCollection("NASA/GLDAS/V021/NOAH/G025/T3H").filterDate('2001-01-01', '2026-01-01')
 
 def choose_secondary_variable():
     variable = input("Enter the secondary variable (air temperature, specific humidity, wind speed, surface pressure, sw down, lw down, soil moisture, all, skip): ").strip()
@@ -62,10 +61,8 @@ def choose_secondary_variable():
         return ['sw_down']
     elif variable == 'lw down':
         return ['lw_down']
-    elif variable == 'soil moisture':
-        return ['soil_moisture']
     elif variable == 'all':
-        return ['air_temperature', 'specific_humidity', 'wind_speed', 'surface_pressure', 'sw_down', 'lw_down', 'soil_moisture']
+        return ['air_temperature', 'specific_humidity', 'wind_speed', 'surface_pressure', 'sw_down', 'lw_down']
     elif variable == 'skip':
         return None    
     else:
@@ -99,10 +96,7 @@ def process_date(date_chunk, variables):
                     file_name = f"GLDAS_sw_down_{nepal_date}.tif"
                 elif variable == 'lw_down':
                     out_dir = outpath_lwdown
-                    file_name = f"GLDAS_lw_down_{nepal_date}.tif"
-                elif variable == 'soil_moisture':
-                    out_dir = outpath_soil_moisture
-                    file_name = f"GLDAS_soil_moisture_{nepal_date}.tif" 
+                    file_name = f"GLDAS_lw_down_{nepal_date}.tif" 
                 else:
                     continue
 
@@ -127,9 +121,9 @@ def process_date(date_chunk, variables):
                     image_to_export = filtered_date_dataset.select('SWdown_f_tavg').mean().rename('sw_down')
                 elif variable == 'lw_down':
                     image_to_export = filtered_date_dataset.select('LWdown_f_tavg').mean().rename('lw_down')
-                elif variable == 'soil_moisture':
-                    image_to_export = filtered_date_dataset.select('SoilMoi0_10cm_inst').mean().rename('soil_moisture')
-                
+                else:
+                    print(Fore.RED + f"..........Unknown variable: {variable}.......... - skipping")
+                    continue
                 try:
                     geemap.ee_export_image(image_to_export, filename=out_path_full, scale=27830, region=region_geom, crs="EPSG:4326", file_per_band=False)
                 except Exception as e_export:

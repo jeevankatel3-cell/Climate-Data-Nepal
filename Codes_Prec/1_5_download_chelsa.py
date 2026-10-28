@@ -14,12 +14,12 @@ warnings.filterwarnings("ignore")
 # ----------------------------------------------------------------------
 # Config
 # ----------------------------------------------------------------------
-TEMPLATE_RASTER = "../../Temperature/Data/Datasets/DEM_1km/DEM_1km_elevation_max.tif"
+TEMPLATE_RASTER = r"E:\\ClimateData_Precipitation\\Data\\Datasets\\DEM_1km\\DEM_1km_elevation_max.tif"
 START_DATE = "2001-01-01"
 END_DATE = "2025-12-31"
 VARIABLES = ["pr"]
 BASE_URL = "https://os.unil.cloud.switch.ch/chelsa02/chelsa/global/daily"
-DOWNLOAD_PATH = "../Data/Datasets/CHELSA/"
+DOWNLOAD_PATH = r"E:\\ClimateData_Precipitation\\Data\\Datasets\\CHELSA"
 
 N_WORKERS =  3     # parallel download/reproject processes
 BATCH_SIZE = 20    # recycle the worker pool after this many files

@@ -34,13 +34,18 @@ from tqdm import tqdm
 
 # --- Configuration ---
 CREDENTIAL_FILE = Path(r"C:\Users\A S U S\Documents\Keys\credentials.json")
-FOLDER_URL = "https://drive.google.com/drive/folders/1DVR90Ud1C444bTOPeENX-3I7tgqPLnao"
+
+# near real time url (2021 onwards)
+#FOLDER_URL = "https://drive.google.com/drive/folders/1XBonFS0_t3aSM_C4CYobwsN-spmj29vo"
+
+#past url (till 2020)
+FOLDER_URL= "https://drive.google.com/drive/folders/1DVR90Ud1C444bTOPeENX-3I7tgqPLnao"
 FOLDER_ID = FOLDER_URL.split('/folders/')[-1].split('?')[0]
 
 # Scratch space on a LOCAL disk (the network share is slow for lots of small read/write cycles).
 OUTPUT_TEMP_PATH = Path(tempfile.gettempdir()) / "MSWEP_TEMP"
-OUTPUT_FINAL_PATH = Path(r"//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Precipitation/Data/Datasets/MSWEP")
-ROI_PATH = Path(r"//192.168.1.210/giis_home/Unclassified/Jeevan_Katel/ClimateDataWS/Temperature/Data/Datasets/roi_nepal_rectangle/nepal_rectangle_shape.shp")
+OUTPUT_FINAL_PATH = Path(r"E:\ClimateData_Precipitation\Data\Datasets\MSWEP")
+ROI_PATH = Path(r"E:\ClimateData_Precipitation\Data\Datasets\roi_nepal_rectangle\nepal_rectangle_shape.shp")
 
 VARIABLE_NAME = "precipitation"
 X_DIM, Y_DIM = "lon", "lat"
